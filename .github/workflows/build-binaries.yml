@@ -16,21 +16,22 @@ jobs:
       - name: Install cross-compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-          # Install musl cross-compiler for static linking
-          sudo apt-get install -y musl-dev
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Download Busybox source
         run: |
-          wget https://busybox.net/downloads/busybox-1.36.1.tar.bz2
-          tar xf busybox-1.36.1.tar.bz2
+          wget https://busybox.net/downloads/busybox-1.35.0.tar.bz2
+          tar xf busybox-1.35.0.tar.bz2
 
       - name: Configure and build Busybox (static, aarch64)
         run: |
-          cd busybox-1.36.1
+          cd busybox-1.35.0
           make defconfig
           # Enable static build
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          # Disable problematic features for static cross-compilation
+          sed -i 's/CONFIG_TC=y/CONFIG_TC=n/' .config
+          sed -i 's/CONFIG_FEATURE_IPCALC_FANCY=y/CONFIG_FEATURE_IPCALC_FANCY=n/' .config
           # Build with aarch64 cross-compiler
           make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
           # Verify it's static
@@ -41,7 +42,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: busybox-aarch64-static
-          path: busybox-1.36.1/busybox
+          path: busybox-1.35.0/busybox
 
   build-proot:
     runs-on: ubuntu-latest
