@@ -56,6 +56,8 @@ jobs:
         run: |
           git clone https://github.com/proot-me/proot.git
           cd proot
+          # Disable Python extension (no cross-compile headers available)
+          sed -i '/python/d' src/GNUmakefile
           # Build static proot for aarch64
           make -C src ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CFLAGS="-static -DARG_MAX=131072" \
