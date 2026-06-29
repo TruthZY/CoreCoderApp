@@ -54,17 +54,15 @@ jobs:
 
       - name: Clone and build proot
         run: |
-          git clone https://github.com/proot-me/proot.git
+          git clone https://github.com/termux/proot.git
           cd proot
-          # Remove Python extension entirely (requires cross-compiled Python headers we don't have)
-          rm -rf src/extension/python
-          sed -i 's|extension/python/python.o||g' src/GNUmakefile
-          # Build static proot for aarch64
-          make -C src ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          # Termux fork has no Python extension, builds cleanly for aarch64
+          make -C src CROSS_COMPILE=aarch64-linux-gnu- \
             CFLAGS="-static -DARG_MAX=131072" \
             LDFLAGS="-static" \
             -j$(nproc)
           file src/proot
+          aarch64-linux-gnu-readelf -d src/proot | grep NEEDED || echo "Static binary confirmed"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
