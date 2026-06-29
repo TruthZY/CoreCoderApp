@@ -47,28 +47,21 @@ jobs:
   build-proot:
     runs-on: ubuntu-latest
     steps:
-      - name: Install cross-compiler and deps
+      - name: Download prebuilt proot for aarch64
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libtalloc-dev
-
-      - name: Clone and build proot
-        run: |
-          git clone https://github.com/termux/proot.git
-          cd proot
-          # Termux fork has no Python extension, builds cleanly for aarch64
-          make -C src CROSS_COMPILE=aarch64-linux-gnu- \
-            CFLAGS="-static -DARG_MAX=131072" \
-            LDFLAGS="-static" \
-            -j$(nproc)
-          file src/proot
-          aarch64-linux-gnu-readelf -d src/proot | grep NEEDED || echo "Static binary confirmed"
+          mkdir -p proot-build
+          cd proot-build
+          # Download the last stable proot release for aarch64
+          wget https://github.com/proot-me/proot/releases/download/v5.4.0/proot-v5.4.0-aarch64-static
+          mv proot-v5.4.0-aarch64-static proot
+          chmod +x proot
+          file proot
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: proot-aarch64-static
-          path: proot/src/proot
+          path: proot-build/proot
 
   build-bash:
     runs-on: ubuntu-latest
