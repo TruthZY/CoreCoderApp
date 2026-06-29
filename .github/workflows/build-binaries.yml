@@ -5,6 +5,9 @@ name: Build Static Binaries (aarch64)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-binaries.yml'
 
 jobs:
   build-busybox:
