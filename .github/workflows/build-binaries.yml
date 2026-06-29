@@ -56,8 +56,11 @@ jobs:
         run: |
           git clone https://github.com/proot-me/proot.git
           cd proot
-          # Build only the proot binary (skip Python extension which needs cross-compile headers)
-          make -C src proot ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          # Remove Python extension entirely (requires cross-compiled Python headers we don't have)
+          rm -rf src/extension/python
+          sed -i 's|extension/python/python.o||g' src/GNUmakefile
+          # Build static proot for aarch64
+          make -C src ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CFLAGS="-static -DARG_MAX=131072" \
             LDFLAGS="-static" \
             -j$(nproc)
