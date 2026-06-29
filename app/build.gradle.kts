@@ -84,6 +84,18 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/versions/**",
+                "META-INF/INDEX.LIST",
+                "META-INF/io.netty.*"
+            )
+        }
     }
 }
 
@@ -92,6 +104,9 @@ configurations.all {
 }
 
 dependencies {
+    // Terminal core module (OperitTerminalCore)
+    implementation(project(":terminal-core"))
+
     // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
@@ -134,6 +149,10 @@ dependencies {
 
     // Gson (for flexible JSON handling with LLM APIs)
     implementation("com.google.code.gson:gson:2.11.0")
+
+    // Tar extraction (pure Java — no busybox binary needed)
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")  // xz decompression support
 
     // Markdown rendering
     implementation("io.noties.markwon:core:4.6.2")

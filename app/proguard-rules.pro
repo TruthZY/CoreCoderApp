@@ -34,3 +34,9 @@
 
 # Keep Coroutines
 -dontwarn kotlinx.coroutines.**
+
+# Keep Apache Commons Compress (tar extraction)
+-keep class org.apache.commons.compress.** { *; }
+-dontwarn org.apache.commons.compress.**
+-keep class org.tukaani.xz.** { *; }
+-dontwarn org.tukaani.xz.**

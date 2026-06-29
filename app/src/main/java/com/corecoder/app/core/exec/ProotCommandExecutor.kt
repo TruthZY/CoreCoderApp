@@ -33,6 +33,7 @@ class ProotCommandExecutor @Inject constructor(
         private const val TAG = "ProotExecutor"
         private const val READ_BUFFER_SIZE = 4096
         private const val PTY_READ_TIMEOUT_MS = 100L  // Poll interval for PTY reads
+        private const val STARTUP_PROBE_TIMEOUT_MS = 5000L  // 5s to verify proot is alive
 
         // Markers for command output parsing
         private const val BEGIN_PREFIX = "__CC_BEGIN__"
@@ -53,6 +54,10 @@ class ProotCommandExecutor @Inject constructor(
     private val outputBuffer = StringBuilder()
     private val outputLock = java.lang.Object()
 
+    /** Reason for last session start failure (for diagnostics). */
+    @Volatile
+    private var lastError: String? = null
+
     /**
      * Start the proot + bash session if not already running.
      */
@@ -62,30 +67,34 @@ class ProotCommandExecutor @Inject constructor(
 
         if (!EnvironmentBootstrap.isBootstrapped(context)) {
             Log.w(TAG, "Environment not bootstrapped yet")
+            lastError = "Linux environment not bootstrapped"
             return false
         }
 
+        lastError = null
         return startSession()
     }
 
     /**
      * Start a new proot + bash session.
+     * Includes a startup probe to verify proot actually responds.
      */
     private fun startSession(): Boolean {
         val prootPath = EnvironmentBootstrap.getProotPath(context)
         val rootfsDir = EnvironmentBootstrap.getRootfsDir(context)
 
         if (!File(prootPath).exists()) {
-            Log.e(TAG, "proot binary not found: $prootPath")
+            lastError = "proot binary not found: $prootPath"
+            Log.e(TAG, lastError!!)
             return false
         }
         if (!rootfsDir.exists()) {
-            Log.e(TAG, "rootfs not found: ${rootfsDir.absolutePath}")
+            lastError = "rootfs not found: ${rootfsDir.absolutePath}"
+            Log.e(TAG, lastError!!)
             return false
         }
 
         // Build proot arguments
-        // proot -r <rootfs> -0 -b /dev -b /proc -b /sys -w /home /bin/bash
         val args = listOf(
             prootPath,
             "-r", rootfsDir.absolutePath,
@@ -100,14 +109,6 @@ class ProotCommandExecutor @Inject constructor(
             "--noprofile"
         )
 
-        val argsStr = args.drop(1).joinToString("\n")
-        val envStr = listOf(
-            "TERM=xterm-256color",
-            "HOME=/home",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "LANG=en_US.UTF-8"
-        ).joinToString("\n")
-
         val fd = Pty.createPty(
             cmd = prootPath,
             args = args.drop(1),
@@ -115,13 +116,24 @@ class ProotCommandExecutor @Inject constructor(
                 "TERM=xterm-256color",
                 "HOME=/home",
                 "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                "LANG=en_US.UTF-8"
+                "LANG=en_US.UTF-8",
+                "LD_LIBRARY_PATH="         // clear — prevents Android linker interference
             ),
             cwd = context.filesDir.absolutePath
         )
 
         if (fd < 0) {
             Log.e(TAG, "Failed to create PTY")
+            return false
+        }
+
+        // --- Startup probe: verify proot + bash actually respond ---
+        if (!probeSession(fd)) {
+            lastError = "proot failed to start (SIGSYS/ptrace issue). " +
+                    "proot binary may be incompatible with this device. " +
+                    "On emulators, proot hangs due to ARM translation (houdini) ptrace conflict."
+            Log.e(TAG, "Startup probe FAILED — $lastError")
+            Pty.close(fd)
             return false
         }
 
@@ -141,6 +153,40 @@ class ProotCommandExecutor @Inject constructor(
 
         Log.i(TAG, "Proot session started (fd=$fd)")
         return true
+    }
+
+    /**
+     * Probe the PTY session to verify proot + bash are actually running.
+     * Sends a known marker string and waits for it to appear in output.
+     *
+     * @return true if proot responds within timeout, false if it's dead/hung
+     */
+    private fun probeSession(fd: Int): Boolean {
+        val probeMarker = "__PROOT_ALIVE__"
+        Pty.writeLine(fd, "echo $probeMarker")
+
+        val buffer = ByteArray(READ_BUFFER_SIZE)
+        val output = StringBuilder()
+        val deadline = System.currentTimeMillis() + STARTUP_PROBE_TIMEOUT_MS
+
+        while (System.currentTimeMillis() < deadline) {
+            val n = Pty.read(fd, buffer)
+            if (n <= 0) {
+                // Child exited (EIO → 0) or error (-1) — proot failed to start
+                Log.e(TAG, "PTY read returned $n during probe — child process exited")
+                return false
+            }
+            val chunk = String(buffer, 0, n, Charsets.UTF_8)
+            output.append(chunk)
+            if (output.contains(probeMarker)) {
+                Log.i(TAG, "Startup probe succeeded (proot is alive)")
+                return true
+            }
+        }
+
+        Log.e(TAG, "Startup probe timed out after ${STARTUP_PROBE_TIMEOUT_MS}ms. " +
+                "Output so far: '${output.take(200)}'")
+        return false
     }
 
     /**
@@ -203,7 +249,7 @@ class ProotCommandExecutor @Inject constructor(
         if (!ensureSession()) {
             return@withContext CommandResult(
                 stdout = "",
-                stderr = "Linux environment not ready. Please wait for setup to complete.",
+                stderr = lastError ?: "Linux environment not ready. proot session failed to start.",
                 exitCode = -1
             )
         }
@@ -212,7 +258,7 @@ class ProotCommandExecutor @Inject constructor(
         if (fd < 0 || !sessionActive.get()) {
             return@withContext CommandResult(
                 stdout = "",
-                stderr = "Shell session not available.",
+                stderr = "Shell session not available (proot may have crashed).",
                 exitCode = -1
             )
         }

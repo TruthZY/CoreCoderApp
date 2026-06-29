@@ -2,7 +2,7 @@ package com.corecoder.app.di
 
 import android.content.Context
 import com.corecoder.app.core.exec.CommandExecutor
-import com.corecoder.app.core.exec.ProotCommandExecutor
+import com.corecoder.app.core.exec.OperitCommandExecutor
 import com.corecoder.app.data.AppDatabase
 import com.corecoder.app.data.ConversationDao
 import com.corecoder.app.data.MessageDao
@@ -48,12 +48,12 @@ object AppModule {
     /**
      * Provide the command execution backend.
      *
-     * Uses [ProotCommandExecutor] — embedded proot + Ubuntu rootfs.
-     * No external dependencies (Termux) required.
+     * Uses [OperitCommandExecutor] — OperitTerminalCore's proot + Ubuntu stack.
+     * ShellCommandExecutor remains available as a fallback for emulator development.
      */
     @Provides
     @Singleton
     fun provideCommandExecutor(@ApplicationContext context: Context): CommandExecutor {
-        return ProotCommandExecutor(context)
+        return OperitCommandExecutor(context)
     }
 }

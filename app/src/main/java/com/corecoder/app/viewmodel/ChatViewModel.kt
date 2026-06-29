@@ -113,6 +113,11 @@ class ChatViewModel @Inject constructor(
             val status = commandExecutor.checkAvailability()
             _executorStatus.value = status
 
+            // Auto-bootstrap if not yet set up
+            if (status == "not_bootstrapped") {
+                startBootstrap()
+            }
+
             // Load enabled skills
             val enabledSkills = skillDao.getEnabledSkills()
 

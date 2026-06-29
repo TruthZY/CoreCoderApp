@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "CoreCoder"
 include(":app")
+include(":terminal-core")
