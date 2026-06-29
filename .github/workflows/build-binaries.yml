@@ -1,0 +1,133 @@
+# Cross-compile proot, bash, busybox as static aarch64 binaries
+# Run this workflow manually from GitHub Actions to get downloadable artifacts
+
+name: Build Static Binaries (aarch64)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-busybox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
+          # Install musl cross-compiler for static linking
+          sudo apt-get install -y musl-dev
+
+      - name: Download Busybox source
+        run: |
+          wget https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+          tar xf busybox-1.36.1.tar.bz2
+
+      - name: Configure and build Busybox (static, aarch64)
+        run: |
+          cd busybox-1.36.1
+          make defconfig
+          # Enable static build
+          sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          # Build with aarch64 cross-compiler
+          make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+          # Verify it's static
+          file busybox
+          aarch64-linux-gnu-readelf -d busybox | grep NEEDED || echo "Static binary confirmed (no dynamic deps)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: busybox-aarch64-static
+          path: busybox-1.36.1/busybox
+
+  build-proot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cross-compiler and deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libtalloc-dev
+
+      - name: Clone and build proot
+        run: |
+          git clone https://github.com/proot-me/proot.git
+          cd proot
+          # Build static proot for aarch64
+          make -C src ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CFLAGS="-static -DARG_MAX=131072" \
+            LDFLAGS="-static" \
+            -j$(nproc)
+          file src/proot
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proot-aarch64-static
+          path: proot/src/proot
+
+  build-bash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Download and build Bash (static, aarch64)
+        run: |
+          wget https://ftp.gnu.org/gnu/bash/bash-5.2.37.tar.gz
+          tar xf bash-5.2.37.tar.gz
+          cd bash-5.2.37
+          # Cross-compile with static linking
+          # Note: bash static build requires --without-bash-malloc on some platforms
+          CC=aarch64-linux-gnu-gcc \
+          CFLAGS="-static" \
+          LDFLAGS="-static" \
+          ./configure \
+            --host=aarch64-linux-gnu \
+            --enable-static-link \
+            --without-bash-malloc \
+            --disable-nls \
+            --disable-progcomp \
+            bash_cv_dev_fd=absent \
+            bash_cv_sys_named_pipes=yes \
+            ac_cv_func_mmap_fixed_mapped=yes \
+            ac_cv_func_strcoll_works=yes
+          make -j$(nproc)
+          file bash
+          aarch64-linux-gnu-readelf -d bash | grep NEEDED || echo "Static binary confirmed"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bash-aarch64-static
+          path: bash-5.2.37/bash
+
+  # Combine all binaries into one downloadable package
+  package:
+    needs: [build-busybox, build-proot, build-bash]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries/
+
+      - name: Rename and package
+        run: |
+          mkdir -p output/jniLibs/arm64-v8a
+          cp binaries/busybox-aarch64-static/busybox output/jniLibs/arm64-v8a/libbusybox.so
+          cp binaries/proot-aarch64-static/proot output/jniLibs/arm64-v8a/libproot.so
+          cp binaries/bash-aarch64-static/bash output/jniLibs/arm64-v8a/libbash.so
+          chmod +x output/jniLibs/arm64-v8a/*
+          cd output
+          tar czf ../corecoder-binaries-aarch64.tar.gz jniLibs/
+          echo "=== Binaries ready ==="
+          ls -lh jniLibs/arm64-v8a/
+          file jniLibs/arm64-v8a/*
+
+      - name: Upload combined package
+        uses: actions/upload-artifact@v4
+        with:
+          name: corecoder-binaries-aarch64
+          path: corecoder-binaries-aarch64.tar.gz
